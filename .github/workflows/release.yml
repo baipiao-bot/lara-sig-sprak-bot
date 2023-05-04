@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: 
+      - 'v*'
+
+permissions:
+  contents: write
+  
+jobs:
+  build-binary:
+    runs-on: ubuntu-latest
+    name: Build
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Build binary
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+      - uses: actions/upload-artifact@master
+        with:
+          name: lara-sig-sprak-bot
+          path: target/release/lara-sig-sprak-bot
+  release-binary:
+    name: Release
+    needs: build-binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: download productions
+        uses: actions/download-artifact@master
+        with:
+          name: lara-sig-sprak-bot
+          path: .
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: lara-sig-sprak-bot
+

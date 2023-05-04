@@ -1,0 +1,26 @@
+name: Ask
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
+    - name: Download latest release
+      uses: robinraju/release-downloader@v1.7
+      with:
+        latest: true
+        fileName: lara-sig-sprak-bot
+    - name: Execute on message
+      env:
+        SECRET: ${{ secrets.SECRET }}
+        COOKIE: ${{ secrets.COOKIE }}
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        REDIS_URL: ${{ secrets.REDIS_URL }}
+        AZURE_TTS_SUBSCRIPTION_KEY: ${{ secrets.AZURE_TTS_SUBSCRIPTION_KEY }}
+      run: chmod +x ./lara-sig-sprak-bot && ./lara-sig-sprak-bot
+
