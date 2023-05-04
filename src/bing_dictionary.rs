@@ -1,6 +1,6 @@
 use std::env;
 
-use edge_gpt::{ChatSession, ConversationStyle, CookieInFile};
+use crate::edge_gpt::{ChatSession, ConversationStyle, CookieInFile};
 use serde::{Deserialize, Serialize};
 use teloxide::{
     payloads::{SendMessage, SendVoice},
@@ -31,9 +31,12 @@ impl Word {
         let promote = format!("look up {language_full_name} word \"{spell}\" in dictionary, output the result in this format: {{\"spell\": \"<word>\", \"pronunciation\": \"<IPA of the word>\", \"meaning\": \"<{ui_language_full_name} meaning>\", \"example_sentence\": \"<Example sentence>\", \"example_sentence_translation\": \"<Example sentence's {ui_language_full_name} meaning>\"}}");
         let mut chat = new_chat().await;
         let result = chat.send_message(&promote).await.unwrap();
-        let start_pos = result.text.chars().position(|c| c == '{').unwrap();
-        let end_pos = result.text.chars().position(|c| c == '}').unwrap();
+        println!("{:?}", result);
+        let start_pos = result.text.find(|c| c == '{').unwrap();
+        let end_pos = result.text.find(|c| c == '}').unwrap();
+        println!("{}", &result.text[0..end_pos]);
         let json_str = &result.text[start_pos..=end_pos];
+        println!("{}", json_str);
         serde_json::from_str(json_str).unwrap()
     }
 
@@ -98,4 +101,29 @@ async fn new_chat() -> ChatSession {
     ChatSession::create(ConversationStyle::Balanced, &cookies)
         .await
         .unwrap()
+}
+
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn test_chat() {
+        // let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
+        // let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
+        // let mut session = ChatSession::create(ConversationStyle::Balanced, &cookies)
+        //     .await
+        //     .unwrap();
+        // let language_full_name = "Swedish";
+        // let ui_language_full_name = "English";
+        // let spell = "hej";
+        // let promote = format!("look up {language_full_name} word \"{spell}\" in dictionary, output the result in this format: {{\"spell\": \"<word>\", \"pronunciation\": \"<IPA of the word>\", \"meaning\": \"<{ui_language_full_name} meaning>\", \"example_sentence\": \"<Example sentence>\", \"example_sentence_translation\": \"<Example sentence's {ui_language_full_name} meaning>\"}}");
+        // let resp = session.send_message(&promote).await;
+        // dbg!(resp);
+        let v = Vocabulary {
+            id: "".to_string(),
+            word_string: "behöver".to_string(),
+            last_practiced_ms: 0,
+        };
+        let word = Word::from_vocabulary(&v, "en", "sv").await;
+        println!("{:?}", word);
+    }
 }

@@ -3,6 +3,7 @@ mod bing_dictionary;
 mod duolingo;
 mod telegram;
 mod util;
+mod edge_gpt;
 use bing_dictionary::Word;
 use ezio::prelude::*;
 use rand::prelude::*;
@@ -77,7 +78,7 @@ impl Bot {
                         }
                         CommandKind::DuolingoLogin => {
                             println!("{params_str}");
-                            let mut params = params_str.split(' ');
+                            let mut params = params_str.trim().split(' ');
                             let name = params.next().unwrap();
                             let jwt = params.next().unwrap();
                             let duolingo = duolingo::Duolingo::new(name, jwt).await;

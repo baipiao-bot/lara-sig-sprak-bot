@@ -17,8 +17,8 @@ jobs:
         fileName: lara-sig-sprak-bot
     - name: Execute on message
       env:
+        EDGE_GPT_COOKIE: ${{ secrets.EDGE_GPT_COOKIE }}
         SECRET: ${{ secrets.SECRET }}
-        COOKIE: ${{ secrets.COOKIE }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         REDIS_URL: ${{ secrets.REDIS_URL }}
         AZURE_TTS_SUBSCRIPTION_KEY: ${{ secrets.AZURE_TTS_SUBSCRIPTION_KEY }}

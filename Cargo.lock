@@ -131,22 +131,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "cookie"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7efb37c3e1ccb1ff97164ad95ac1606e8ccd35b3fa0a7d99a304c7f4a428cc24"
-dependencies = [
- "time",
- "version_check",
-]
-
-[[package]]
 name = "cookie_store"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e4b6aa369f41f5faa04bb80c9b1f4216ea81646ed6124d76ba5c49a7aafd9cd"
 dependencies = [
- "cookie 0.16.2",
+ "cookie",
  "idna 0.2.3",
  "log",
  "publicsuffix",
@@ -256,25 +246,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d81175dab5ec79c30e0576df2ed2c244e1721720c302000bb321b107e82e265c"
 dependencies = [
  "futures",
-]
-
-[[package]]
-name = "edge-gpt"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4ca7259a83684a9942af2f73e2e0e056fb220461e0c9b5a0a53c4f4e7f9a171"
-dependencies = [
- "base64 0.21.0",
- "cookie 0.17.0",
- "futures-util",
- "log",
- "rand",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio-tungstenite",
- "uuid",
 ]
 
 [[package]]
@@ -627,9 +598,10 @@ dependencies = [
 name = "lara-sig-sprak-bot"
 version = "0.1.0"
 dependencies = [
+ "base64 0.21.0",
  "bytes",
- "edge-gpt",
  "ezio",
+ "futures-util",
  "hex",
  "isolang",
  "libaes",
@@ -639,7 +611,10 @@ dependencies = [
  "serde",
  "serde_json",
  "teloxide",
+ "thiserror",
  "tokio",
+ "tokio-tungstenite",
+ "uuid",
 ]
 
 [[package]]
@@ -940,7 +915,7 @@ checksum = "13293b639a097af28fc8a90f22add145a9c954e49d77da06263d58cf44d5fb91"
 dependencies = [
  "base64 0.21.0",
  "bytes",
- "cookie 0.16.2",
+ "cookie",
  "cookie_store",
  "encoding_rs",
  "futures-core",
@@ -1444,12 +1419,8 @@ checksum = "54319c93411147bced34cb5609a80e0a8e44c5999c93903a81cd866630ec0bfd"
 dependencies = [
  "futures-util",
  "log",
- "rustls 0.20.8",
- "rustls-native-certs",
  "tokio",
- "tokio-rustls 0.23.4",
  "tungstenite",
- "webpki",
 ]
 
 [[package]]
@@ -1511,12 +1482,10 @@ dependencies = [
  "httparse",
  "log",
  "rand",
- "rustls 0.20.8",
  "sha1",
  "thiserror",
  "url",
  "utf-8",
- "webpki",
 ]
 
 [[package]]
