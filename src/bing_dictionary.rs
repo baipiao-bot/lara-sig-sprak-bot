@@ -1,10 +1,11 @@
 use std::env;
 
-use crate::edge_gpt::{ChatSession, ConversationStyle, CookieInFile};
+use bytes::Bytes;
+use edge_gpt::{ChatSession, ConversationStyle, CookieInFile};
 use serde::{Deserialize, Serialize};
 use teloxide::{
-    payloads::{SendMessage, SendVoice},
-    types::{InputFile, MessageEntity, Recipient},
+    payloads::SendMessage,
+    types::{MessageEntity, Recipient},
 };
 
 use crate::{azure_tts::AzureTTS, duolingo::Vocabulary};
@@ -31,12 +32,9 @@ impl Word {
         let promote = format!("look up {language_full_name} word \"{spell}\" in dictionary, output the result in this format: {{\"spell\": \"<word>\", \"pronunciation\": \"<IPA of the word>\", \"meaning\": \"<{ui_language_full_name} meaning>\", \"example_sentence\": \"<Example sentence>\", \"example_sentence_translation\": \"<Example sentence's {ui_language_full_name} meaning>\"}}");
         let mut chat = new_chat().await;
         let result = chat.send_message(&promote).await.unwrap();
-        println!("{:?}", result);
         let start_pos = result.text.find(|c| c == '{').unwrap();
         let end_pos = result.text.find(|c| c == '}').unwrap();
-        println!("{}", &result.text[0..end_pos]);
         let json_str = &result.text[start_pos..=end_pos];
-        println!("{}", json_str);
         serde_json::from_str(json_str).unwrap()
     }
 
@@ -45,7 +43,7 @@ impl Word {
         tts: &AzureTTS,
         language: &str,
         chat_id: impl Into<Recipient> + Clone,
-    ) -> (SendMessage, SendVoice, SendVoice) {
+    ) -> (SendMessage, Bytes, Bytes) {
         let mut text = String::new();
         let mut entities: Vec<MessageEntity> = Vec::new();
         let mut offset = 0;
@@ -79,18 +77,12 @@ impl Word {
         let voice = tts
             .voices
             .iter()
-            .find(|it| it.locale == language)
+            .find(|it| it.locale.contains(language))
             .unwrap()
             .clone();
         let spell_voice = tts.tts_simple(&self.spell, &voice);
         let sentence_voice = tts.tts_simple(&self.example_sentence, &voice);
         let (spell_voice, sentence_voice) = tokio::join!(spell_voice, sentence_voice);
-        let spell_file = InputFile::memory(spell_voice).file_name("spell.ogg");
-        let sentence_file = InputFile::memory(sentence_voice).file_name("sentence.ogg");
-        let mut spell_voice = SendVoice::new(chat_id.clone(), spell_file);
-        spell_voice.disable_notification = Some(true);
-        let mut sentence_voice = SendVoice::new(chat_id, sentence_file);
-        sentence_voice.disable_notification = Some(true);
         (text_message, spell_voice, sentence_voice)
     }
 }
@@ -101,29 +93,4 @@ async fn new_chat() -> ChatSession {
     ChatSession::create(ConversationStyle::Balanced, &cookies)
         .await
         .unwrap()
-}
-
-mod tests {
-    use super::*;
-    #[tokio::test]
-    async fn test_chat() {
-        // let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
-        // let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
-        // let mut session = ChatSession::create(ConversationStyle::Balanced, &cookies)
-        //     .await
-        //     .unwrap();
-        // let language_full_name = "Swedish";
-        // let ui_language_full_name = "English";
-        // let spell = "hej";
-        // let promote = format!("look up {language_full_name} word \"{spell}\" in dictionary, output the result in this format: {{\"spell\": \"<word>\", \"pronunciation\": \"<IPA of the word>\", \"meaning\": \"<{ui_language_full_name} meaning>\", \"example_sentence\": \"<Example sentence>\", \"example_sentence_translation\": \"<Example sentence's {ui_language_full_name} meaning>\"}}");
-        // let resp = session.send_message(&promote).await;
-        // dbg!(resp);
-        let v = Vocabulary {
-            id: "".to_string(),
-            word_string: "behöver".to_string(),
-            last_practiced_ms: 0,
-        };
-        let word = Word::from_vocabulary(&v, "en", "sv").await;
-        println!("{:?}", word);
-    }
 }

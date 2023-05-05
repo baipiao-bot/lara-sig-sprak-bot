@@ -44,14 +44,6 @@ impl Duolingo {
         duolingo_jwt: &str,
     ) -> (Vec<String>, String) {
         let url = format!("https://www.duolingo.com/users/{duolingo_name}");
-        println!("{}", url);
-        let response = new_reqwest_client()
-            .get(&url)
-            .bearer_auth(duolingo_jwt)
-            .send()
-            .await
-            .unwrap();
-        println!("{:?}", response.text().await);
         let response = new_reqwest_client()
             .get(&url)
             .bearer_auth(duolingo_jwt)

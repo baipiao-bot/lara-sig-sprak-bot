@@ -3,7 +3,6 @@ mod bing_dictionary;
 mod duolingo;
 mod telegram;
 mod util;
-mod edge_gpt;
 use bing_dictionary::Word;
 use ezio::prelude::*;
 use rand::prelude::*;
@@ -104,8 +103,8 @@ impl Bot {
                                     .await;
                                 status_sender.send(()).unwrap();
                                 self.telegram.send_message(&text).await;
-                                self.telegram.send_voice(&word).await;
-                                self.telegram.send_voice(&sentence).await;
+                                self.telegram.send_voice(message.chat.id, &word).await;
+                                self.telegram.send_voice(message.chat.id, &sentence).await;
                             } else {
                                 let respond = simple_respond_message(
                                     message,
