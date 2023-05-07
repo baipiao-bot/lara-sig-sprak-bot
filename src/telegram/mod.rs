@@ -1,8 +1,9 @@
-use std::time::Duration;
-
+mod format;
 use bytes::Bytes;
+
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use teloxide::{
     payloads::{SendChatAction, SendMessage},
     types::{ChatAction, ChatId, Message, ParseMode},
@@ -14,6 +15,7 @@ use tokio::{
 
 use crate::util::new_reqwest_client;
 
+pub use format::*;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Telegram {
     pub token: String,
@@ -93,7 +95,6 @@ pub fn escape(text: &str) -> String {
         .replace('_', "\\_")
         .replace('.', "\\.")
 }
-
 pub fn simple_respond_message(to_message: &Message, text: &str) -> SendMessage {
     let mut result = SendMessage::new(to_message.chat.id, escape(text));
     result.reply_to_message_id = Some(to_message.id);

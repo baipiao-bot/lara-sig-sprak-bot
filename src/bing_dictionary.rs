@@ -87,7 +87,7 @@ impl Word {
     }
 }
 
-async fn new_chat() -> ChatSession {
+pub async fn new_chat() -> ChatSession {
     let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
     let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
     ChatSession::create(ConversationStyle::Balanced, &cookies)

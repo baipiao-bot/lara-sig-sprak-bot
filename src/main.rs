@@ -3,14 +3,21 @@ mod bing_dictionary;
 mod duolingo;
 mod telegram;
 mod util;
+
 use bing_dictionary::Word;
+use bytes::Bytes;
+use edge_gpt::{ChatSession, ConversationStyle, CookieInFile, NewBingResponseMessage};
 use ezio::prelude::*;
 use rand::prelude::*;
 use redis::AsyncCommands;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::env;
-use telegram::simple_respond_message;
-use teloxide::types::{Message, Update, UpdateKind};
+use std::{env, mem};
+use telegram::{fix_attributions, fix_unordered_list, simple_respond_message, to_utf16_offset};
+use teloxide::{
+    payloads::SendMessage,
+    types::{Message, MessageEntity, MessageEntityKind, Update, UpdateKind},
+};
 use util::decrypt;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -76,7 +83,6 @@ impl Bot {
                             self.telegram.send_message(&respond).await;
                         }
                         CommandKind::DuolingoLogin => {
-                            println!("{params_str}");
                             let mut params = params_str.trim().split(' ');
                             let name = params.next().unwrap();
                             let jwt = params.next().unwrap();
@@ -84,34 +90,10 @@ impl Bot {
                             self.duolingo = Some(duolingo);
                         }
                         CommandKind::RandomWord => {
-                            if let Some(duolingo) = &self.duolingo {
-                                let vocabulary = {
-                                    let mut rng = thread_rng();
-                                    duolingo.vocabulary.choose(&mut rng).unwrap()
-                                };
-                                let language = duolingo.languages.first().unwrap();
-                                let status_sender =
-                                    self.telegram.start_sending_typing_status(message.chat.id);
-                                let word = Word::from_vocabulary(
-                                    vocabulary,
-                                    duolingo.ui_language.as_ref(),
-                                    language,
-                                )
-                                .await;
-                                let (text, word, sentence) = word
-                                    .to_telegram_message(&self.azure_tts, language, message.chat.id)
-                                    .await;
-                                status_sender.send(()).unwrap();
-                                self.telegram.send_message(&text).await;
-                                self.telegram.send_voice(message.chat.id, &word).await;
-                                self.telegram.send_voice(message.chat.id, &sentence).await;
-                            } else {
-                                let respond = simple_respond_message(
-                                    message,
-                                    "Please use `/duolingo_login` to login to duolingo.",
-                                );
-                                self.telegram.send_message(&respond).await;
-                            }
+                            self.random_word(message).await;
+                        }
+                        CommandKind::Chat => {
+                            self.start_chat(message).await;
                         }
                         _ => {
                             unimplemented!()
@@ -121,6 +103,110 @@ impl Bot {
             }
         }
     }
+
+    async fn random_word(&mut self, message: &Message) {
+        if let Some(duolingo) = &self.duolingo {
+            let vocabulary = {
+                let mut rng = thread_rng();
+                duolingo.vocabulary.choose(&mut rng).unwrap()
+            };
+            let language = duolingo.languages.first().unwrap();
+            let status_sender = self.telegram.start_sending_typing_status(message.chat.id);
+            let word =
+                Word::from_vocabulary(vocabulary, duolingo.ui_language.as_ref(), language).await;
+            let (text, word, sentence) = word
+                .to_telegram_message(&self.azure_tts, language, message.chat.id)
+                .await;
+            status_sender.send(()).unwrap();
+            self.telegram.send_message(&text).await;
+            self.telegram.send_voice(message.chat.id, &word).await;
+            self.telegram.send_voice(message.chat.id, &sentence).await;
+        } else {
+            let respond = simple_respond_message(
+                message,
+                "Please use `/duolingo_login` to login to duolingo.",
+            );
+            self.telegram.send_message(&respond).await;
+        }
+    }
+
+    async fn chat_respond_from_bing(
+        &self,
+        message: &Message,
+        mut bing_respond: NewBingResponseMessage,
+    ) -> (SendMessage, Bytes) {
+        let mut entities = Vec::new();
+        fix_unordered_list(&mut bing_respond);
+        fix_attributions(&mut bing_respond, &mut entities);
+        if let Some(duolingo) = &self.duolingo {
+            let language = duolingo.languages.first().unwrap();
+            let removed_translation_voice = hide_translation(&mut bing_respond, &mut entities);
+            let voice = self
+                .azure_tts
+                .voices
+                .iter()
+                .find(|it| it.locale.contains(language))
+                .unwrap()
+                .clone();
+            let tts_result = self
+                .azure_tts
+                .tts_simple(&removed_translation_voice, &voice)
+                .await;
+            (
+                SendMessage {
+                    chat_id: message.chat.id.into(),
+                    text: bing_respond.text,
+                    entities: Some(entities),
+                    disable_web_page_preview: Some(true),
+                    reply_to_message_id: Some(message.id),
+                    message_thread_id: None,
+                    parse_mode: None,
+                    disable_notification: None,
+                    protect_content: None,
+                    allow_sending_without_reply: None,
+                    reply_markup: None,
+                },
+                tts_result,
+            )
+        } else {
+            unimplemented!()
+        }
+    }
+
+    async fn start_chat(&self, message: &Message) {
+        let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
+        let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
+        let mut session = ChatSession::create(ConversationStyle::Creative, &cookies)
+            .await
+            .unwrap();
+        let response = session
+            .send_message(include_str!("../chat_promote.txt"))
+            .await
+            .unwrap();
+        let (send_message, tts_result) = self.chat_respond_from_bing(message, response).await;
+        self.telegram.send_message(&send_message).await;
+        self.telegram.send_voice(message.chat.id, &tts_result).await;
+    }
+}
+
+pub fn hide_translation(
+    bing_respond: &mut NewBingResponseMessage,
+    entries: &mut Vec<MessageEntity>,
+) -> String {
+    let text = mem::take(&mut bing_respond.text);
+    let origin_text = text.clone();
+    let re = Regex::new(r"\(([^)]+)\)").unwrap();
+    for m in re.find_iter(&text) {
+        let utf16_start = to_utf16_offset(&text, m.start());
+        let utf16_size = m.as_str().encode_utf16().count();
+        entries.push(MessageEntity {
+            offset: utf16_start,
+            length: utf16_size,
+            kind: MessageEntityKind::Spoiler,
+        });
+    }
+    bing_respond.text = text;
+    re.replace_all(&origin_text, "").to_string()
 }
 
 #[tokio::main]
