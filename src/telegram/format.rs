@@ -30,31 +30,32 @@ fn sup(mut number: u8) -> String {
     result
 }
 
+struct DetachedMatch {
+    start: usize,
+    end: usize,
+}
+
+impl From<regex::Match<'_>> for DetachedMatch {
+    fn from(m: regex::Match) -> Self {
+        Self {
+            start: m.start(),
+            end: m.end(),
+        }
+    }
+}
+
+impl DetachedMatch {
+    pub fn as_str<'a>(&self, origin: &'a str) -> &'a str {
+        &origin[self.start..self.end]
+    }
+    pub fn range(&self) -> std::ops::Range<usize> {
+        self.start..self.end
+    }
+}
+
 pub fn fix_attributions(answer: &mut NewBingResponseMessage, entries: &mut Vec<MessageEntity>) {
     let mut text = mem::take(&mut answer.text);
     let re = Regex::new(r"\[\^(\d+)\^\]").unwrap();
-    struct DetachedMatch {
-        start: usize,
-        end: usize,
-    }
-
-    impl From<regex::Match<'_>> for DetachedMatch {
-        fn from(m: regex::Match) -> Self {
-            Self {
-                start: m.start(),
-                end: m.end(),
-            }
-        }
-    }
-
-    impl DetachedMatch {
-        pub fn as_str<'a>(&self, origin: &'a str) -> &'a str {
-            &origin[self.start..self.end]
-        }
-        pub fn range(&self) -> std::ops::Range<usize> {
-            self.start..self.end
-        }
-    }
 
     while let Some(m) = re.find(&text).map(DetachedMatch::from) {
         let display_form_attribution_id = m.as_str(&text)[2..m.as_str(&text).len() - 2]
@@ -72,6 +73,23 @@ pub fn fix_attributions(answer: &mut NewBingResponseMessage, entries: &mut Vec<M
             kind: MessageEntityKind::TextLink {
                 url: source_attribution.parse().unwrap(),
             },
+        });
+    }
+    answer.text = text;
+}
+
+pub fn fix_bold(answer: &mut NewBingResponseMessage, entries: &mut Vec<MessageEntity>) {
+    let mut text = mem::take(&mut answer.text);
+    let re = Regex::new(r"\*\*([^\*]+)\*\*").unwrap();
+    while let Some(m) = re.find(&text).map(DetachedMatch::from) {
+        let bold_text = m.as_str(&text)[2..m.as_str(&text).len() - 2].to_string();
+        text.replace_range(m.range(), &bold_text);
+        let utf16_start = to_utf16_offset(&text, m.start);
+        let utf16_size = bold_text.encode_utf16().count();
+        entries.push(MessageEntity {
+            offset: utf16_start,
+            length: utf16_size,
+            kind: MessageEntityKind::Bold,
         });
     }
     answer.text = text;

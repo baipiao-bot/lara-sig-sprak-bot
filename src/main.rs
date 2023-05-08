@@ -13,7 +13,9 @@ use redis::{aio::Connection, AsyncCommands};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{env, mem};
-use telegram::{fix_attributions, fix_unordered_list, simple_respond_message, to_utf16_offset};
+use telegram::{
+    fix_attributions, fix_bold, fix_unordered_list, simple_respond_message, to_utf16_offset,
+};
 use teloxide::{
     payloads::SendMessage,
     types::{Message, MessageEntity, MessageEntityKind, Update, UpdateKind},
@@ -140,6 +142,7 @@ impl Bot {
         let mut entities = Vec::new();
         fix_unordered_list(&mut bing_respond);
         fix_attributions(&mut bing_respond, &mut entities);
+        fix_bold(&mut bing_respond, &mut entities);
         if let Some(duolingo) = &self.duolingo {
             let language = duolingo.languages.first().unwrap();
             let removed_translation_voice = hide_translation(&mut bing_respond, &mut entities);
