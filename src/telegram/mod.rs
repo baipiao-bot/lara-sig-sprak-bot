@@ -32,7 +32,7 @@ impl Telegram {
         Self::new(std::env::var("TELEGRAM_TOKEN").unwrap())
     }
 
-    pub async fn send_message(&self, message: &SendMessage) {
+    pub async fn send_message(&self, message: &SendMessage) -> Message {
         let url = format!("https://api.telegram.org/bot{}/sendMessage", self.token);
         let result = new_reqwest_client()
             .post(&url)
@@ -41,8 +41,10 @@ impl Telegram {
             .await
             .unwrap();
         if !result.status().is_success() {
-            println!("{:?}", result);
+            println!("{:?}", &result);
         }
+        let result: serde_json::Value = result.json().await.unwrap();
+        serde_json::from_value(result["result"].clone()).unwrap()
     }
 
     pub async fn send_voice(&self, chat_id: ChatId, voice: &Bytes) {

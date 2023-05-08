@@ -9,7 +9,7 @@ use bytes::Bytes;
 use edge_gpt::{ChatSession, ConversationStyle, CookieInFile, NewBingResponseMessage};
 use ezio::prelude::*;
 use rand::prelude::*;
-use redis::AsyncCommands;
+use redis::{aio::Connection, AsyncCommands};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{env, mem};
@@ -66,7 +66,7 @@ impl Bot {
         }
     }
 
-    pub async fn handle(&mut self, message: &Message) {
+    pub async fn handle(&mut self, message: &Message, redis_connection: &mut Connection) {
         if let Some(text) = message.text() {
             if text.starts_with('/') {
                 let end_of_command_text =
@@ -93,13 +93,15 @@ impl Bot {
                             self.random_word(message).await;
                         }
                         CommandKind::Chat => {
-                            self.start_chat(message).await;
+                            self.start_chat(message, redis_connection).await;
                         }
                         _ => {
                             unimplemented!()
                         }
                     }
                 }
+            } else if message.reply_to_message().is_some() {
+                self.response_chat(message, redis_connection).await;
             }
         }
     }
@@ -173,9 +175,10 @@ impl Bot {
         }
     }
 
-    async fn start_chat(&self, message: &Message) {
+    async fn start_chat(&self, message: &Message, redis_connection: &mut Connection) {
         let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
         let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
+        let status_sender = self.telegram.start_sending_typing_status(message.chat.id);
         let mut session = ChatSession::create(ConversationStyle::Creative, &cookies)
             .await
             .unwrap();
@@ -184,8 +187,34 @@ impl Bot {
             .await
             .unwrap();
         let (send_message, tts_result) = self.chat_respond_from_bing(message, response).await;
-        self.telegram.send_message(&send_message).await;
+        status_sender.send(()).unwrap();
+        let send_message_response = self.telegram.send_message(&send_message).await;
         self.telegram.send_voice(message.chat.id, &tts_result).await;
+        let key = format!("{}-{}", message.chat.id, send_message_response.id);
+        let session_str = serde_json::to_string(&session).unwrap();
+        let _: () = redis_connection
+            .set_ex(key, session_str, 60 * 60)
+            .await
+            .unwrap();
+    }
+
+    async fn response_chat(&self, message: &Message, redis_connection: &mut Connection) {
+        let reply_to_message = message.reply_to_message().unwrap();
+        let key = format!("{}-{}", message.chat.id, reply_to_message.id);
+        let corresponding_session: String = redis_connection.get(key).await.unwrap();
+        let mut session: ChatSession = serde_json::from_str(&corresponding_session).unwrap();
+        let status_sender = self.telegram.start_sending_typing_status(message.chat.id);
+        let response = session.send_message(message.text().unwrap()).await.unwrap();
+        let (send_message, tts_result) = self.chat_respond_from_bing(message, response).await;
+        status_sender.send(()).unwrap();
+        let send_message_response = self.telegram.send_message(&send_message).await;
+        self.telegram.send_voice(message.chat.id, &tts_result).await;
+        let key = format!("{}-{}", message.chat.id, send_message_response.id);
+        let session_str = serde_json::to_string(&session).unwrap();
+        let _: () = redis_connection
+            .set_ex(key, session_str, 60 * 60)
+            .await
+            .unwrap();
     }
 }
 
@@ -238,7 +267,7 @@ async fn main() {
                 Bot::new(telegram_token, azure_tts_subscription_key).await
             };
             if let UpdateKind::Message(message) = &request.kind {
-                bot.handle(message).await;
+                bot.handle(message, &mut redis_connection).await;
             }
             let bot_json = serde_json::to_string(&bot).unwrap();
             let _: () = redis_connection
