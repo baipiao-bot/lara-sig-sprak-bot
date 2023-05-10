@@ -52,7 +52,8 @@ impl Telegram {
         let part = Part::bytes(voice.to_vec()).file_name("voice.ogg");
         let form = Form::new()
             .text("chat_id", chat_id.to_string())
-            .part("voice", part);
+            .part("voice", part)
+            .text("disable_notification", "true");
         let result = new_reqwest_client()
             .post(&url)
             .multipart(form)

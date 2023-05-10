@@ -12,7 +12,7 @@ use rand::prelude::*;
 use redis::{aio::Connection, AsyncCommands};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{env, mem};
+use std::env;
 use telegram::{
     fix_attributions, fix_bold, fix_unordered_list, simple_respond_message, to_utf16_offset,
 };
@@ -145,7 +145,8 @@ impl Bot {
         fix_bold(&mut bing_respond, &mut entities);
         if let Some(duolingo) = &self.duolingo {
             let language = duolingo.languages.first().unwrap();
-            let removed_translation_voice = hide_translation(&mut bing_respond, &mut entities);
+            let translation_hided = hide_translation(&bing_respond, &mut entities);
+            let tts_content = extract_tts_part(&translation_hided);
             let voice = self
                 .azure_tts
                 .voices
@@ -153,10 +154,7 @@ impl Bot {
                 .find(|it| it.locale.contains(language))
                 .unwrap()
                 .clone();
-            let tts_result = self
-                .azure_tts
-                .tts_simple(&removed_translation_voice, &voice)
-                .await;
+            let tts_result = self.azure_tts.tts_simple(&tts_content, &voice).await;
             (
                 SendMessage {
                     chat_id: message.chat.id.into(),
@@ -222,14 +220,13 @@ impl Bot {
 }
 
 pub fn hide_translation(
-    bing_respond: &mut NewBingResponseMessage,
+    bing_respond: &NewBingResponseMessage,
     entries: &mut Vec<MessageEntity>,
 ) -> String {
-    let text = mem::take(&mut bing_respond.text);
-    let origin_text = text.clone();
+    let origin_text = bing_respond.text.clone();
     let re = Regex::new(r"\(([^)]+)\)").unwrap();
-    for m in re.find_iter(&text) {
-        let utf16_start = to_utf16_offset(&text, m.start());
+    for m in re.find_iter(&origin_text) {
+        let utf16_start = to_utf16_offset(&origin_text, m.start());
         let utf16_size = m.as_str().encode_utf16().count();
         entries.push(MessageEntity {
             offset: utf16_start,
@@ -237,8 +234,21 @@ pub fn hide_translation(
             kind: MessageEntityKind::Spoiler,
         });
     }
-    bing_respond.text = text;
     re.replace_all(&origin_text, "").to_string()
+}
+
+pub fn extract_tts_part(bing_respond: &str) -> String {
+    let mistake_start = bing_respond.find("Mistakes you made:");
+    if let Some(mistake_start) = mistake_start {
+        let mut rest = &bing_respond[mistake_start..];
+        while let Some(next) = rest.find('•') {
+            let line_end = rest[next..].find('\n').unwrap();
+            rest = &rest[next + line_end..];
+        }
+        rest.trim().to_string()
+    } else {
+        bing_respond.trim().to_string()
+    }
 }
 
 #[tokio::main]
