@@ -186,14 +186,12 @@ impl Bot {
     ) -> (SendMessage, Bytes) {
         if let Some(duolingo) = &self.duolingo {
             let language = duolingo.languages.first().unwrap();
-            let mut content = bing_respond.text.trim_matches('`');
-            content = if let Some(stripped) = content.strip_prefix("md") {
-                stripped.trim()
-            } else if let Some(stripped) = content.strip_prefix("markdown") {
-                stripped.trim()
-            } else {
-                content.trim()
-            };
+            let start_position = bing_respond.text.find("\"\"\"").unwrap();
+            let end_position = bing_respond
+                .text
+                .rfind("\"\"\"")
+                .unwrap_or(bing_respond.text.len());
+            let content = bing_respond.text[start_position + 3..end_position].trim();
             let voice = self
                 .azure_tts
                 .voices
@@ -273,7 +271,7 @@ impl Bot {
                 .map(|it| it.word_string.clone())
                 .collect::<Vec<_>>()
                 .join(",");
-            let promote = format!("Please write a short story in {language} which is less than 300 words, please tell the story only without anything else, the story should use simple words and these special words must be included: {words}.");
+            let promote = format!("Please write a short story in {language} which is less than 200 words, the story should use simple words and these special words must be included: {words}. Wrap the story content in two '\"\"\"'s");
             let status_sender = self.telegram.start_sending_typing_status(message.chat.id);
             let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
             let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
