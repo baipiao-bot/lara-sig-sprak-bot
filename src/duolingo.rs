@@ -21,7 +21,8 @@ pub struct Duolingo {
 impl Duolingo {
     pub async fn new(duolingo_name: &str, duolingo_jwt: &str) -> Self {
         let (languages, ui_language) = Self::fetch_language_info(duolingo_name, duolingo_jwt).await;
-        let vocabulary = Self::fetch_vocabularies(duolingo_jwt).await;
+        let mut vocabulary = Self::fetch_vocabularies(duolingo_jwt).await;
+        vocabulary.sort_unstable_by_key(|it| it.last_practiced_ms);
         Self {
             duolingo_name: duolingo_name.to_string(),
             duolingo_jwt: duolingo_jwt.to_string(),

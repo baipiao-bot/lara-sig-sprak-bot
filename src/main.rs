@@ -28,7 +28,7 @@ pub enum CommandKind {
     DuolingoLogin,
     RandomWord,
     Chat,
-    Passage,
+    Story,
     Help,
 }
 
@@ -39,7 +39,7 @@ impl TryFrom<&str> for CommandKind {
             "duolingo_login" => Ok(Self::DuolingoLogin),
             "random_word" => Ok(Self::RandomWord),
             "chat" => Ok(Self::Chat),
-            "passage" => Ok(Self::Passage),
+            "story" => Ok(Self::Story),
             "help" => Ok(Self::Help),
             _ => Err(()),
         }
@@ -96,6 +96,9 @@ impl Bot {
                         }
                         CommandKind::Chat => {
                             self.start_chat(message, redis_connection).await;
+                        }
+                        CommandKind::Story => {
+                            self.story(message).await;
                         }
                         _ => {
                             unimplemented!()
@@ -176,6 +179,50 @@ impl Bot {
         }
     }
 
+    async fn story_respond_from_bing(
+        &self,
+        message: &Message,
+        bing_respond: NewBingResponseMessage,
+    ) -> (SendMessage, Bytes) {
+        if let Some(duolingo) = &self.duolingo {
+            let language = duolingo.languages.first().unwrap();
+            let mut content = bing_respond.text.trim_matches('`');
+            content = if let Some(stripped) = content.strip_prefix("md") {
+                stripped.trim()
+            } else if let Some(stripped) = content.strip_prefix("markdown") {
+                stripped.trim()
+            } else {
+                content.trim()
+            };
+            let voice = self
+                .azure_tts
+                .voices
+                .iter()
+                .find(|it| it.locale.contains(language))
+                .unwrap()
+                .clone();
+            let tts_result = self.azure_tts.tts_simple(content, &voice).await;
+            (
+                SendMessage {
+                    chat_id: message.chat.id.into(),
+                    text: bing_respond.text,
+                    entities: None,
+                    disable_web_page_preview: Some(true),
+                    reply_to_message_id: Some(message.id),
+                    message_thread_id: None,
+                    parse_mode: None,
+                    disable_notification: None,
+                    protect_content: None,
+                    allow_sending_without_reply: None,
+                    reply_markup: None,
+                },
+                tts_result,
+            )
+        } else {
+            unimplemented!()
+        }
+    }
+
     async fn start_chat(&self, message: &Message, redis_connection: &mut Connection) {
         let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
         let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
@@ -216,6 +263,35 @@ impl Bot {
             .set_ex(key, session_str, 60 * 60)
             .await
             .unwrap();
+    }
+
+    async fn story(&self, message: &Message) {
+        if let Some(duolingo) = &self.duolingo {
+            let language = duolingo.languages.first().unwrap();
+            let words = &duolingo.vocabulary[duolingo.vocabulary.len() - 5..]
+                .iter()
+                .map(|it| it.word_string.clone())
+                .collect::<Vec<_>>()
+                .join(",");
+            let promote = format!("Please write a short story in {language} which is less than 300 words, please tell the story only without anything else, the story should use simple words and these special words must be included: {words}.");
+            let status_sender = self.telegram.start_sending_typing_status(message.chat.id);
+            let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
+            let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
+            let mut session = ChatSession::create(ConversationStyle::Creative, &cookies)
+                .await
+                .unwrap();
+            let response = session.send_message(&promote).await.unwrap();
+            let (send_message, tts_result) = self.story_respond_from_bing(message, response).await;
+            status_sender.send(()).unwrap();
+            self.telegram.send_message(&send_message).await;
+            self.telegram.send_voice(message.chat.id, &tts_result).await;
+        } else {
+            let respond = simple_respond_message(
+                message,
+                "Please use `/duolingo_login` to login to duolingo.",
+            );
+            self.telegram.send_message(&respond).await;
+        }
     }
 }
 
