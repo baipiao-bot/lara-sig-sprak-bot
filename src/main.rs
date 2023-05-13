@@ -183,15 +183,17 @@ impl Bot {
         &self,
         message: &Message,
         bing_respond: NewBingResponseMessage,
-    ) -> (SendMessage, Bytes) {
+    ) -> (SendMessage, SendMessage, Bytes) {
         if let Some(duolingo) = &self.duolingo {
-            let language = duolingo.languages.first().unwrap();
+            let language = &duolingo.languages[0];
+            let ui_language = &duolingo.ui_language;
             let start_position = bing_respond.text.find("\"\"\"").unwrap();
             let end_position = bing_respond
                 .text
                 .rfind("\"\"\"")
                 .unwrap_or(bing_respond.text.len());
             let content = bing_respond.text[start_position + 3..end_position].trim();
+            let translate_promote = format!("Translate the given text to {ui_language}. Be faithful or accurate in translation. Make the translation readable or intelligible. Be elegant or natural in translation. If the text cannot be translated, return the original text as is. Do not translate person's name. Do not add any additional text in the translation. The text to be translated is:\n{content}");
             let voice = self
                 .azure_tts
                 .voices
@@ -199,12 +201,39 @@ impl Bot {
                 .find(|it| it.locale.contains(language))
                 .unwrap()
                 .clone();
-            let tts_result = self.azure_tts.tts_simple(content, &voice).await;
+            let cookie_str = env::var("EDGE_GPT_COOKIE").unwrap();
+            let cookies: Vec<CookieInFile> = serde_json::from_str(&cookie_str).unwrap();
+            let mut session = ChatSession::create(ConversationStyle::Balanced, &cookies)
+                .await
+                .unwrap();
+            let (translate_response, tts_result) = tokio::join!(
+                session.send_message(&translate_promote),
+                self.azure_tts.tts_simple(content, &voice)
+            );
+            let translate_response = translate_response.unwrap();
+            let length = translate_response.text.as_str().encode_utf16().count();
             (
                 SendMessage {
                     chat_id: message.chat.id.into(),
-                    text: bing_respond.text,
+                    text: content.to_string(),
                     entities: None,
+                    disable_web_page_preview: Some(true),
+                    reply_to_message_id: Some(message.id),
+                    message_thread_id: None,
+                    parse_mode: None,
+                    disable_notification: None,
+                    protect_content: None,
+                    allow_sending_without_reply: None,
+                    reply_markup: None,
+                },
+                SendMessage {
+                    chat_id: message.chat.id.into(),
+                    text: translate_response.text,
+                    entities: Some(vec![MessageEntity {
+                        kind: MessageEntityKind::Spoiler,
+                        offset: 0,
+                        length,
+                    }]),
                     disable_web_page_preview: Some(true),
                     reply_to_message_id: Some(message.id),
                     message_thread_id: None,
@@ -279,9 +308,11 @@ impl Bot {
                 .await
                 .unwrap();
             let response = session.send_message(&promote).await.unwrap();
-            let (send_message, tts_result) = self.story_respond_from_bing(message, response).await;
+            let (send_message, send_translation, tts_result) =
+                self.story_respond_from_bing(message, response).await;
             status_sender.send(()).unwrap();
             self.telegram.send_message(&send_message).await;
+            self.telegram.send_message(&send_translation).await;
             self.telegram.send_voice(message.chat.id, &tts_result).await;
         } else {
             let respond = simple_respond_message(
